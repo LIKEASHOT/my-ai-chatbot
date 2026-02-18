@@ -3,9 +3,13 @@ import { NextResponse } from 'next/server';
 
 // Create an OpenAI API client (that's edge friendly!)
 // Create an OpenAI API client (that's edge friendly!)
-const openai = new OpenAI({
-  baseURL: process.env.OPENAI_BASE_URL, // Optional: for third-party proxies
-});
+const clientConfig = {
+  baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+  apiKey: process.env.OPENAI_API_KEY,
+};
+console.log("OpenAI Base URL Configured:", clientConfig.baseURL); // Debug log for Vercel
+
+const openai = new OpenAI(clientConfig);
 
 // Set the runtime to edge for best performance
 export const runtime = 'edge';
