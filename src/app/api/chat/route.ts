@@ -42,8 +42,10 @@ export async function POST(req: Request) {
     // Return the stream
     return new NextResponse(stream);
   } catch (error: any) {
+    console.error("Full Error Object:", error); // Detailed log
     if (error instanceof OpenAI.APIError) {
       const { name, status, headers, message } = error;
+      console.error(`OpenAI API Error: Status=${status}, Message=${message}`);
       return NextResponse.json({ name, status, headers, message }, { status });
     } else {
       throw error;
