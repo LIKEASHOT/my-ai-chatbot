@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
     // Ask OpenAI for a streaming chat completion given the prompt
     const response = await openai.chat.completions.create({
-      model: 'claude-3-7-sonnet-20250219', // Specific model requested by user
+      model: 'gpt-5-codex', // Updated to gpt-5-codex as requested
       stream: true,
       messages,
     });
