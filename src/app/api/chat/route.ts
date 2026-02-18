@@ -3,7 +3,9 @@ import { NextResponse } from 'next/server';
 
 // Create an OpenAI API client (that's edge friendly!)
 // Create an OpenAI API client (that's edge friendly!)
-const openai = new OpenAI();
+const openai = new OpenAI({
+  baseURL: process.env.OPENAI_BASE_URL, // Optional: for third-party proxies
+});
 
 // Set the runtime to edge for best performance
 export const runtime = 'edge';
