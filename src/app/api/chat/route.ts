@@ -23,40 +23,64 @@ export async function POST(req: Request) {
     // Fixed prompt as requested
     const prompt = "A grainy, accidental iPhone front-camera selfie taken at the Lakers home arena right after a game ended. The photo is blurry, poorly framed with no clear subject, and slightly overexposed due to harsh, uneven lighting. It captures a chaotic, mundane moment of crowds leaving, looking exactly like a mistake shot taken while pulling the phone from a pocket. Raw, low-quality, unedited aesthetic..";
 
-    // Call OpenAI API with the specific model and image input
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-image', // Specific model requested
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: image // Expecting data:image/... base64 string
+    // Create a stream to bypass Vercel 25s initial response timeout
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // 1. Send a keep-alive byte (whitespace) immediately
+          // This tells Vercel "response started", resetting the 25s timeout
+          controller.enqueue(encoder.encode("  "));
+
+          // 2. Call OpenAI API (this might take 30s+)
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4o-image', // Specific model requested
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: prompt },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: image
+                    }
+                  }
+                ]
               }
-            }
-          ]
+            ],
+            stream: false, // We still wait for full response, but inside the stream wrapper
+          });
+
+          // 3. Send the actual JSON response
+          const jsonString = JSON.stringify(response);
+          controller.enqueue(encoder.encode(jsonString));
+          controller.close();
+
+        } catch (error: any) {
+          console.error("Stream Error:", error);
+          const errorJson = JSON.stringify({
+            error: true,
+            message: error.message || "Generate error",
+            details: error
+          });
+          controller.enqueue(encoder.encode(errorJson));
+          controller.close(); // Close stream on error
         }
-      ],
-      // We don't use stream: true for image generation usually, as we need the full URL/data
-      // But if the proxy supports streaming text that contains the url, we could. 
-      // For safety/simplicity with 'generation', let's use non-streaming to get the full response.
-      stream: false,
+      }
     });
 
-    console.log("Model Response:", response);
-
-    return NextResponse.json(response);
+    // Return the stream with JSON content type
+    // Browsers' .json() parser handles leading whitespace fine
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+      }
+    });
 
   } catch (error: any) {
-    console.error("Full Error Object:", error);
-    if (error instanceof OpenAI.APIError) {
-      const { name, status, headers, message } = error;
-      return NextResponse.json({ name, status, headers, message }, { status });
-    } else {
-      return NextResponse.json({ message: error.message || "Internal Server Error" }, { status: 500 });
-    }
+    console.error("Request Error:", error);
+    return NextResponse.json({ message: "Request failed" }, { status: 500 });
   }
 }
