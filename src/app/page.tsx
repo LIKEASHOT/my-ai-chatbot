@@ -177,12 +177,12 @@ export default function Home() {
     };
 
     return (
-        <div className="min-h-screen bg-black text-white font-sans selection:bg-purple-500/30">
+        <div className="min-h-[100dvh] w-full bg-black text-white font-sans selection:bg-purple-500/30 overflow-x-hidden overflow-y-auto">
             {/* Background Ambience */}
             <div className="fixed inset-0 z-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-purple-900/20 via-black to-black pointer-events-none"></div>
             <div className="fixed inset-0 z-0 bg-[url('/noise.png')] opacity-[0.03] pointer-events-none"></div>
 
-            <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 flex flex-col items-center min-h-screen">
+            <div className="relative z-10 max-w-4xl mx-auto px-4 py-8 flex flex-col items-center w-full">
 
                 {/* Header */}
                 <header className="text-center mb-12 space-y-4">
@@ -195,7 +195,7 @@ export default function Home() {
                 </header>
 
                 {/* Main Interface */}
-                <main className="w-full flex flex-col md:grid md:grid-cols-2 gap-8 items-start pb-20">
+                <main className="w-full grid grid-cols-2 gap-4 md:gap-8 items-start pb-20">
 
                     {/* Upload Section */}
                     <div className="space-y-6">
