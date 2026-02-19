@@ -115,22 +115,37 @@ export default function Home() {
 
             if (!response.ok) throw new Error("Failed to generate");
 
-            const data = await response.json();
+            // Handle the potential keep-alive whitespace we added in the backend
+            const rawText = await response.text();
+            const cleanText = rawText.trim();
 
-            // Try to find the image URL in common OpenAI response structures
-            const content = data.choices?.[0]?.message?.content;
-
-            if (content) {
-                const urlMatch = content.match(/https?:\/\/[^\s)]+/);
-                if (urlMatch) {
-                    setGeneratedImage(urlMatch[0]);
-                } else {
-                    console.log("No URL found in content:", content);
-                }
+            let data: any;
+            try {
+                data = JSON.parse(cleanText);
+            } catch (e) {
+                console.error("JSON Parse Error:", e, cleanText);
+                throw new Error("Invalid JSON response");
             }
 
-            if (data.data && data.data[0]?.url) {
+            // 1. Check for 'urls' array (User's specific case for gpt-4o-image proxy)
+            if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
+                setGeneratedImage(data.urls[0]);
+            }
+            // 2. Check for OpenAI Standard 'data' array
+            else if (data.data && Array.isArray(data.data) && data.data[0]?.url) {
                 setGeneratedImage(data.data[0].url);
+            }
+            // 3. Fallback: Search in content text
+            else {
+                const content = data.choices?.[0]?.message?.content;
+                if (content) {
+                    const urlMatch = content.match(/https?:\/\/[^\s)]+/);
+                    if (urlMatch) {
+                        setGeneratedImage(urlMatch[0]);
+                    } else {
+                        console.log("No URL found in content:", content);
+                    }
+                }
             }
 
         } catch (error) {
