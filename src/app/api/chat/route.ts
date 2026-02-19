@@ -11,7 +11,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Image is required" }, { status: 400 });
     }
 
-    const prompt = "A grainy, accidental iPhone front-camera selfie taken at the Lakers home arena right after a game ended. The photo is blurry, poorly framed with no clear subject, and slightly overexposed due to harsh, uneven lighting. It captures a chaotic, mundane moment of crowds leaving, looking exactly like a mistake shot taken while pulling the phone from a pocket. Raw, low-quality, unedited aesthetic.";
+    const prompt = "You are a realistic photo generator. Refer to the person in the attached image and create a new, extremely mundane iPhone selfie of them standing next to LeBron James. The photo should look like a random, blurry, and slightly overexposed snapshot taken at the Lakers home arena after a game. It must look like a low-quality \"mistake\" shot with no professional composition. Ensure the person from the attached image is wearing a Lakers jersey and looking at the camera.";
 
     const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
     const apiKey = process.env.OPENAI_API_KEY;
