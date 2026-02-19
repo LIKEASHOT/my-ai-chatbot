@@ -1,13 +1,11 @@
 import { OpenAI } from 'openai';
 import { NextResponse } from 'next/server';
 
-// Create an OpenAI API client (that's edge friendly!)
-// Create an OpenAI API client (that's edge friendly!)
+// Create an OpenAI API client
 const clientConfig = {
   baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
   apiKey: process.env.OPENAI_API_KEY,
 };
-console.log("OpenAI Base URL Configured:", clientConfig.baseURL); // Debug log for Vercel
 
 const openai = new OpenAI(clientConfig);
 
@@ -16,39 +14,49 @@ export const runtime = 'edge';
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { image } = await req.json();
 
-    // Ask OpenAI for a streaming chat completion given the prompt
+    if (!image) {
+      return NextResponse.json({ message: "Image is required" }, { status: 400 });
+    }
+
+    // Fixed prompt as requested
+    const prompt = "A grainy, accidental iPhone front-camera selfie taken at the Lakers home arena right after a game ended. The photo is blurry, poorly framed with no clear subject, and slightly overexposed due to harsh, uneven lighting. It captures a chaotic, mundane moment of crowds leaving, looking exactly like a mistake shot taken while pulling the phone from a pocket. Raw, low-quality, unedited aesthetic..";
+
+    // Call OpenAI API with the specific model and image input
     const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo', // Updated to gpt-3.5-turbo for new provider
-      stream: true,
-      messages,
-    });
-
-    // Convert the response into a friendly text-stream
-    const stream = new ReadableStream({
-      async start(controller) {
-        // @ts-ignore
-        for await (const chunk of response) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            controller.enqueue(new TextEncoder().encode(content));
-          }
+      model: 'gpt-4o-image', // Specific model requested
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            {
+              type: "image_url",
+              image_url: {
+                url: image // Expecting data:image/... base64 string
+              }
+            }
+          ]
         }
-        controller.close();
-      },
+      ],
+      // We don't use stream: true for image generation usually, as we need the full URL/data
+      // But if the proxy supports streaming text that contains the url, we could. 
+      // For safety/simplicity with 'generation', let's use non-streaming to get the full response.
+      stream: false,
     });
 
-    // Return the stream
-    return new NextResponse(stream);
+    console.log("Model Response:", response);
+
+    return NextResponse.json(response);
+
   } catch (error: any) {
-    console.error("Full Error Object:", error); // Detailed log
+    console.error("Full Error Object:", error);
     if (error instanceof OpenAI.APIError) {
       const { name, status, headers, message } = error;
-      console.error(`OpenAI API Error: Status=${status}, Message=${message}`);
       return NextResponse.json({ name, status, headers, message }, { status });
     } else {
-      throw error;
+      return NextResponse.json({ message: error.message || "Internal Server Error" }, { status: 500 });
     }
   }
 }

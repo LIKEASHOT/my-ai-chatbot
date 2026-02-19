@@ -1,266 +1,264 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, Sparkles, Terminal } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Upload, ImageIcon, Loader2, RefreshCw } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 import clsx, { ClassValue } from 'clsx';
+import Image from 'next/image';
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
-type Message = {
-    role: 'user' | 'assistant';
-    content: string;
-};
+// Simple progress steps
+const STEPS = [
+    "正在分析面部特征...",
+    "正在联系詹姆斯...",
+    "詹姆斯正在赶来...",
+    "正在寻找拍摄角度...",
+    "快门即将按下...",
+];
 
 export default function Home() {
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [input, setInput] = useState('');
+    const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [generatedImage, setGeneratedImage] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [progress, setProgress] = useState(0);
+    const [stepText, setStepText] = useState(STEPS[0]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            setSelectedImage(e.target?.result as string);
+            setGeneratedImage(null); // Reset previous result
+        };
+        reader.readAsDataURL(file);
     };
 
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+    const simulateProgress = () => {
+        let currentStep = 0;
+        setProgress(0);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!input.trim() || isLoading) return;
+        const interval = setInterval(() => {
+            currentStep++;
+            setProgress((prev) => Math.min(prev + 10, 90)); // Cap at 90 until done
+            setStepText(STEPS[currentStep % STEPS.length]);
+        }, 800);
 
-        const userMessage: Message = { role: 'user', content: input };
-        setMessages((prev) => [...prev, userMessage]);
-        setInput('');
+        return interval;
+    };
+
+    const handleGenerate = async () => {
+        if (!selectedImage) return;
+
         setIsLoading(true);
-
-        // Reset textarea height
-        if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-        }
+        const progressInterval = simulateProgress();
 
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: [...messages, userMessage] }),
+                body: JSON.stringify({ image: selectedImage }),
             });
 
-            if (!response.ok) throw new Error(response.statusText);
+            if (!response.ok) throw new Error("Failed to generate");
 
-            setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+            const data = await response.json();
 
-            const reader = response.body?.getReader();
-            const decoder = new TextDecoder();
+            // Try to find the image URL in common OpenAI response structures
+            // Sometimes it's in content, sometimes it's text.
+            // Assuming standard chat completion structure first:
+            const content = data.choices?.[0]?.message?.content;
 
-            if (!reader) return;
+            // If the model returns a direct URL in content text (common for some img models wrapped as chat)
+            // Or if it returns markdown image syntax
+            // We will naively look for a URL in the content if it's not JSON
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+            if (content) {
+                // Simple heuristic: check if content looks like a URL or contains one
+                // For now, let's assume the content itself MIGHT be the image URL or description
+                // But usually image generation models return a specific url field or attachment.
+                // Since user specified gpt-4o-image via chat completion, it's likely returning text DESCRIPTION or maybe a URL if it's a tool call.
+                // BUT, user's prompt is a description.
+                // Wait, if "gpt-4o-image" is actually an image generator, it might return a URL.
 
-                const text = decoder.decode(value, { stream: true });
-
-                setMessages((prev) => {
-                    const lastMsg = prev[prev.length - 1];
-                    const update = { ...lastMsg, content: lastMsg.content + text };
-                    return [...prev.slice(0, -1), update];
-                });
+                // Let's look for http links in the content
+                const urlMatch = content.match(/https?:\/\/[^\s)]+/);
+                if (urlMatch) {
+                    setGeneratedImage(urlMatch[0]);
+                } else {
+                    // If no URL found, maybe the proxy returns the image directly or base64?
+                    // Or maybe it just described the image?
+                    // Fallback: Display the content as text if it's not a URL, might be an error or description
+                    console.log("No URL found in content:", content);
+                    // For demo purposes if this fails we might need to adjust based on actual API behavior
+                }
             }
+
+            // If the proxy returns standard image generation response format (dall-e style)
+            if (data.data && data.data[0]?.url) {
+                setGeneratedImage(data.data[0].url);
+            }
+
         } catch (error) {
-            console.error('Error fetching chat:', error);
-            setMessages((prev) => [
-                ...prev,
-                { role: 'assistant', content: 'SYSTEM ERROR: Connection Interrupted.' },
-            ]);
+            console.error(error);
+            alert("生成失败，请重试");
         } finally {
+            clearInterval(progressInterval);
+            setProgress(100);
+            setStepText("生成完成！");
             setIsLoading(false);
         }
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit(e);
-        }
-    };
-
-    const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
-        const target = e.currentTarget;
-        target.style.height = 'auto';
-        target.style.height = `${target.scrollHeight}px`;
-        setInput(target.value);
-    }
-
     return (
-        <div className="flex flex-col h-screen font-sans overflow-hidden">
-            {/* Header */}
-            <header className="px-6 py-4 border-b border-white/10 bg-black/40 backdrop-blur-xl sticky top-0 z-50 flex items-center justify-between shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
-                <div className="flex items-center gap-3 group cursor-pointer">
-                    <div className="relative">
-                        <div className="absolute inset-0 bg-cyan-500 blur-md opacity-40 rounded-lg group-hover:opacity-70 transition-opacity duration-300"></div>
-                        <div className="relative bg-black/60 border border-cyan-500/30 p-2 rounded-lg group-hover:border-cyan-400 transition-colors">
-                            <Sparkles className="w-6 h-6 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse-slow" />
-                        </div>
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold tracking-tight text-white group-hover:text-cyan-400 transition-colors">
-                            NEURAL<span className="text-cyan-400">.CHAT</span>
-                        </h1>
-                        <div className="flex items-center gap-1.5 opacity-60 text-xs text-cyan-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                            <span>SYSTEM ONLINE</span>
-                        </div>
-                    </div>
-                </div>
-                <div className="hidden sm:flex text-xs font-mono text-gray-500 gap-4">
-                    <span>v2.0.45-beta</span>
-                    <span className="text-cyan-900">|</span>
-                    <span>LATENCY: 12ms</span>
-                </div>
-            </header>
+        <div className="min-h-screen bg-black text-white font-sans selection:bg-purple-500/30">
+            {/* Background Ambience */}
+            <div className="fixed inset-0 z-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-purple-900/20 via-black to-black pointer-events-none"></div>
+            <div className="fixed inset-0 z-0 bg-[url('/noise.png')] opacity-[0.03] pointer-events-none"></div>
 
-            {/* Chat Area */}
-            <main className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-8 scroll-smooth z-10 w-full max-w-5xl mx-auto">
-                {messages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center space-y-6 animate-fade-in-up">
-                        <div className="relative group">
-                            <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500 to-purple-600 rounded-full blur-3xl opacity-20 group-hover:opacity-40 transition-opacity duration-700"></div>
-                            <div className="relative bg-black/40 p-8 rounded-3xl border border-white/10 backdrop-blur-xl shadow-2xl ring-1 ring-white/10">
-                                <Bot className="w-20 h-20 text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]" />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <h2 className="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-500">
-                                Hello, Human.
-                            </h2>
-                            <p className="text-gray-400 max-w-md mx-auto">
-                                I am ready to process your queries. Ask me anything about code, the universe, or digital philosophy.
-                            </p>
-                        </div>
+            <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 flex flex-col items-center min-h-screen justify-center">
 
-                        {/* Example Prompts */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mt-8 text-sm">
-                            {["写一段 Python 爬虫代码", "解释量子纠缠", "设计一个赛博朋克风格的按钮", "给我讲个冷笑话"].map((prompt, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => {
-                                        setInput(prompt);
-                                        // Optional: auto-submit logic could go here
-                                    }}
-                                    className="px-4 py-3 bg-white/5 border border-white/5 hover:bg-white/10 hover:border-cyan-500/30 text-gray-300 rounded-xl transition-all text-left truncate group"
-                                >
-                                    <span className="text-cyan-500/50 mr-2 group-hover:text-cyan-400">&gt;</span>
-                                    {prompt}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                ) : (
-                    messages.map((m, index) => (
+                {/* Header */}
+                <header className="text-center mb-12 space-y-4">
+                    <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-yellow-400 via-purple-500 to-indigo-600 animate-fade-in-up">
+                        詹姆斯<span className="text-white block text-2xl md:text-3xl mt-2 font-light tracking-widest opacity-80">AI 合影工坊</span>
+                    </h1>
+                    <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
+                        上传你的自拍，AI 将带你穿越到湖人主场，捕捉那个混乱而真实的瞬间。
+                    </p>
+                </header>
+
+                {/* Main Interface */}
+                <main className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+
+                    {/* Upload Section */}
+                    <div className="space-y-6">
                         <div
-                            key={index}
+                            onClick={() => fileInputRef.current?.click()}
                             className={cn(
-                                "group flex w-full gap-4 sm:gap-6 opacity-0 animate-[fadeInUp_0.4s_ease-out_forwards]",
-                                m.role === 'user' ? "flex-row-reverse" : "flex-row"
+                                "group relative aspect-[3/4] rounded-3xl border-2 border-dashed border-white/10 bg-white/5 hover:bg-white/10 hover:border-purple-500/50 transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden",
+                                selectedImage ? "border-solid border-purple-500/30" : ""
                             )}
-                            style={{ animationDelay: `${index * 50}ms` }}
                         >
-                            {/* Avatar */}
-                            <div className={cn(
-                                "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border shadow-lg backdrop-blur-sm transition-all duration-300",
-                                m.role === 'user'
-                                    ? "bg-purple-900/20 border-purple-500/30 text-purple-200 shadow-[0_0_15px_-3px_rgba(168,85,247,0.2)]"
-                                    : "bg-cyan-900/20 border-cyan-500/30 text-cyan-200 shadow-[0_0_15px_-3px_rgba(6,182,212,0.2)]"
-                            )}>
-                                {m.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
-                            </div>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleImageUpload}
+                                className="hidden"
+                                accept="image/*"
+                            />
 
-                            {/* Message Bubble */}
-                            <div className={cn(
-                                "relative px-6 py-4 rounded-2xl max-w-[85%] sm:max-w-[75%] shadow-md backdrop-blur-md border text-sm sm:text-base leading-relaxed tracking-wide",
-                                m.role === 'user'
-                                    ? "bg-gradient-to-br from-purple-600/90 to-blue-600/90 border-transparent text-white rounded-tr-sm shadow-[0_4px_20px_rgba(147,51,234,0.3)]"
-                                    : "bg-white/5 border-white/10 text-gray-100 rounded-tl-sm shadow-sm hover:border-white/20 transition-colors"
-                            )}>
-                                {/* Decorative Corner for AI */}
-                                {m.role === 'assistant' && (
-                                    <div className="absolute -top-[1px] -left-[1px] w-3 h-3 border-t border-l border-cyan-500/50 rounded-tl-xl opacity-50"></div>
-                                )}
-
-                                <p className="whitespace-pre-wrap break-words">{m.content}</p>
-
-                                {/* Timestamp / Meta (static for now) */}
-                                <div className={cn(
-                                    "mt-2 text-[10px] uppercase tracking-widest opacity-40 font-mono flex justify-end",
-                                    m.role === 'user' ? "text-purple-200" : "text-cyan-200"
-                                )}>
-                                    {m.role === 'user' ? 'USR_7X' : 'AI_CORE'}
+                            {selectedImage ? (
+                                <img src={selectedImage} alt="User Upload" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="text-center space-y-4 p-6">
+                                    <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                                        <Upload className="w-8 h-8 text-gray-400 group-hover:text-purple-400 transition-colors" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="font-medium text-gray-300">点击上传照片</p>
+                                        <p className="text-xs text-gray-500">支持 JPG, PNG (最大 5MB)</p>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {/* Hover Overlay for Change */}
+                            {selectedImage && !isLoading && (
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <p className="text-white font-medium flex items-center gap-2">
+                                        <ImageIcon className="w-4 h-4" /> 更换图片
+                                    </p>
+                                </div>
+                            )}
                         </div>
-                    ))
-                )}
-
-                {/* Loading Indicator */}
-                {isLoading && messages[messages.length - 1]?.role === 'user' && (
-                    <div className="flex w-full gap-4 sm:gap-6 mt-4">
-                        <div className="w-10 h-10 rounded-xl bg-cyan-900/20 border border-cyan-500/30 text-cyan-200 flex items-center justify-center shrink-0 animate-pulse">
-                            <Terminal className="w-5 h-5" />
-                        </div>
-                        <div className="px-5 py-3 rounded-2xl bg-white/5 border border-white/10 text-gray-400 rounded-tl-sm flex items-center gap-3 w-fit">
-                            <div className="flex gap-1.5">
-                                <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                                <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                                <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce"></div>
-                            </div>
-                            <span className="text-xs font-mono uppercase tracking-widest opacity-60">Computing</span>
-                        </div>
-                    </div>
-                )}
-
-                <div ref={messagesEndRef} className="h-4" />
-            </main>
-
-            {/* Input Area */}
-            <footer className="p-4 sm:p-6 bg-transparent sticky bottom-0 z-20">
-                <div className="max-w-4xl mx-auto backdrop-blur-2xl bg-black/60 border border-white/10 rounded-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] p-2 relative group-focus-within:ring-1 group-focus-within:ring-cyan-500/50 transition-all duration-500">
-
-                    {/* Glowing Border Effect */}
-                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-500 via-purple-500 to-blue-500 opacity-0 group-focus-within:opacity-20 blur-md transition-opacity duration-500 pointer-events-none"></div>
-
-                    <form onSubmit={handleSubmit} className="relative flex items-end gap-2 bg-black/40 rounded-xl p-1">
-                        <div className="pl-3 py-3 text-cyan-500/50 shrink-0">
-                            <Terminal className="w-5 h-5" />
-                        </div>
-
-                        <textarea
-                            ref={textareaRef}
-                            value={input}
-                            onChange={handleInput}
-                            onKeyDown={handleKeyDown}
-                            placeholder="Enter command..."
-                            rows={1}
-                            className="flex-1 max-h-[200px] py-3 px-2 bg-transparent border-none focus:ring-0 text-white placeholder-gray-500 resize-none font-sans text-base leading-relaxed scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
-                        />
 
                         <button
-                            type="submit"
-                            disabled={!input.trim() || isLoading}
-                            className="mb-1 p-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg disabled:opacity-30 disabled:hover:bg-cyan-600 disabled:cursor-not-allowed transition-all duration-200 shadow-[0_0_15px_rgba(8,145,178,0.4)] hover:shadow-[0_0_20px_rgba(6,182,212,0.6)]"
+                            onClick={handleGenerate}
+                            disabled={!selectedImage || isLoading}
+                            className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold tracking-wide shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
                         >
-                            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                            {isLoading ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    生成中...
+                                </>
+                            ) : (
+                                <>
+                                    <SparklesIcon className="w-5 h-5" />
+                                    生成 AI 合影
+                                </>
+                            )}
                         </button>
-                    </form>
-                </div>
-                <div className="text-center mt-3 text-[10px] text-gray-600 font-mono tracking-widest uppercase">
-                    Neural Interface v2.0 • Secure Connection
-                </div>
-            </footer>
+                    </div>
+
+                    {/* Result Section */}
+                    <div className={cn(
+                        "relative aspect-[3/4] rounded-3xl bg-black/40 border border-white/10 flex flex-col items-center justify-center overflow-hidden transition-all duration-500",
+                        isLoading ? "border-purple-500/30 ring-1 ring-purple-500/20" : ""
+                    )}>
+
+                        {isLoading ? (
+                            <div className="text-center space-y-6 p-8 w-full max-w-sm">
+                                {/* Progress Bar */}
+                                <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-yellow-400 to-purple-600 transition-all duration-300 ease-out"
+                                        style={{ width: `${progress}%` }}
+                                    ></div>
+                                </div>
+                                <div className="space-y-2">
+                                    <p className="text-lg font-medium text-purple-200 animate-pulse">
+                                        {stepText}
+                                    </p>
+                                    <p className="text-xs text-gray-500 font-mono">
+                                        PROCESSING_REQUEST... {progress}%
+                                    </p>
+                                </div>
+                            </div>
+                        ) : generatedImage ? (
+                            <div className="relative w-full h-full group">
+                                <img src={generatedImage} alt="AI Generated" className="w-full h-full object-cover animate-fade-in" />
+                                {/* Actions */}
+                                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex justify-center gap-4">
+
+                                    <a
+                                        href={generatedImage}
+                                        download="james-ai-photo.png"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-6 py-2 bg-white text-black rounded-full font-medium hover:bg-gray-200 transition-colors"
+                                    >
+                                        下载原图
+                                    </a>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-center text-gray-600 px-6">
+                                <div className="w-20 h-20 border-2 border-dashed border-white/5 rounded-2xl mx-auto mb-4 flex items-center justify-center rotate-3">
+                                    <span className="text-4xl opacity-20">?</span>
+                                </div>
+                                <p>生成的合影将显示在这里</p>
+                            </div>
+                        )}
+
+                    </div>
+
+                </main>
+            </div>
         </div>
     );
+}
+
+// Icon Components to avoid extra deps if needed, but using lucide is fine
+function SparklesIcon({ className }: { className?: string }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+        </svg>
+    )
 }
