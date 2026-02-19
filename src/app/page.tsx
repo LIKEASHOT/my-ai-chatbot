@@ -162,7 +162,9 @@ export default function Home() {
             const imageUrl = data.imageUrl || "";
 
             if (imageUrl) {
-                setGeneratedImage(imageUrl);
+                // Proxy through our backend to bypass CDN hotlink protection
+                const proxiedUrl = `/api/proxy?url=${encodeURIComponent(imageUrl)}`;
+                setGeneratedImage(proxiedUrl);
                 setDebugUrl(imageUrl);
             } else {
                 console.error("No image URL found. Data:", data);
