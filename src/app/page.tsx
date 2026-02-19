@@ -1,20 +1,19 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { Upload, ImageIcon, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Upload, ImageIcon, Loader2, AlertCircle } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 import clsx, { ClassValue } from 'clsx';
-import Image from 'next/image';
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
-// Simple progress steps
+// Progress steps
 const STEPS = [
     "正在分析面部特征...",
-    "正在联系詹姆斯...",
-    "詹姆斯正在赶来...",
+    "正在联系乐邦占士...",
+    "乐邦占士正在赶来...",
     "正在寻找拍摄角度...",
     "快门即将按下...",
 ];
@@ -32,8 +31,6 @@ const compressImage = (file: File): Promise<string> => {
                 let width = img.width;
                 let height = img.height;
                 const maxDim = 1024;
-
-                // Resize logic
                 if (width > maxDim || height > maxDim) {
                     if (width > height) {
                         height = Math.round((height * maxDim) / width);
@@ -43,20 +40,12 @@ const compressImage = (file: File): Promise<string> => {
                         height = maxDim;
                     }
                 }
-
                 canvas.width = width;
                 canvas.height = height;
-
                 const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    reject(new Error("Failed to get canvas context"));
-                    return;
-                }
+                if (!ctx) { reject(new Error("Canvas error")); return; }
                 ctx.drawImage(img, 0, 0, width, height);
-
-                // Compress to JPEG with 0.7 quality
-                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-                resolve(compressedBase64);
+                resolve(canvas.toDataURL('image/jpeg', 0.7));
             };
             img.onerror = (err) => reject(err);
         };
@@ -64,8 +53,41 @@ const compressImage = (file: File): Promise<string> => {
     });
 };
 
+// Load the athlete reference image as base64
+const loadReferenceImage = (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const img = document.createElement('img');
+        img.crossOrigin = "anonymous";
+        img.src = "/lebron_reference.jpg";
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            // Compress reference image too
+            let width = img.width;
+            let height = img.height;
+            const maxDim = 1024;
+            if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                    height = Math.round((height * maxDim) / width);
+                    width = maxDim;
+                } else {
+                    width = Math.round((width * maxDim) / height);
+                    height = maxDim;
+                }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { reject(new Error("Canvas error")); return; }
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.onerror = (err) => reject(err);
+    });
+};
+
 export default function Home() {
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [referenceImage, setReferenceImage] = useState<string | null>(null);
     const [generatedImage, setGeneratedImage] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [progress, setProgress] = useState(0);
@@ -73,12 +95,17 @@ export default function Home() {
     const [debugUrl, setDebugUrl] = useState<string>("");
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Pre-load the reference image on mount
+    useEffect(() => {
+        loadReferenceImage()
+            .then(setReferenceImage)
+            .catch((err) => console.error("Failed to load reference image:", err));
+    }, []);
+
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         try {
-            // Use the compression utility
             const compressed = await compressImage(file);
             setSelectedImage(compressed);
             setGeneratedImage(null);
@@ -92,18 +119,16 @@ export default function Home() {
     const simulateProgress = () => {
         let currentStep = 0;
         setProgress(0);
-
         const interval = setInterval(() => {
             currentStep++;
-            setProgress((prev) => Math.min(prev + 10, 90)); // Cap at 90 until done
+            setProgress((prev) => Math.min(prev + 10, 90));
             setStepText(STEPS[currentStep % STEPS.length]);
         }, 800);
-
         return interval;
     };
 
     const handleGenerate = async () => {
-        if (!selectedImage) return;
+        if (!selectedImage || !referenceImage) return;
 
         setIsLoading(true);
         setDebugUrl("");
@@ -114,7 +139,10 @@ export default function Home() {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: selectedImage }),
+                body: JSON.stringify({
+                    imageA: selectedImage,     // User's selfie
+                    imageB: referenceImage,    // Athlete reference
+                }),
             });
 
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -131,14 +159,13 @@ export default function Home() {
                 throw new Error("Invalid JSON response");
             }
 
-            // Backend now returns { imageUrl, debug }
             const imageUrl = data.imageUrl || "";
 
             if (imageUrl) {
                 setGeneratedImage(imageUrl);
-                setDebugUrl(imageUrl); // Show for debugging
+                setDebugUrl(imageUrl);
             } else {
-                console.error("No image URL found in standard paths. Data:", data);
+                console.error("No image URL found. Data:", data);
                 alert("未能识别返回的图片格式，请查看控制台日志");
             }
 
@@ -164,12 +191,11 @@ export default function Home() {
                 {/* Header */}
                 <header className="text-center mb-12 space-y-4">
                     <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-yellow-400 via-purple-500 to-indigo-600 animate-fade-in-up">
-                        詹姆斯<span className="text-white block text-2xl md:text-3xl mt-2 font-light tracking-widest opacity-80">AI 合影工坊</span>
+                        乐邦占士<span className="text-white block text-2xl md:text-3xl mt-2 font-light tracking-widest opacity-80">AI 合影工坊</span>
                     </h1>
                     <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
-                        上传你的自拍，AI 将带你穿越到湖人主场，捕捉那个混乱而真实的瞬间。
+                        上传你的自拍，AI 将为你与乐邦占士生成一张真实感十足的合影。
                     </p>
-                    <div className="text-xs text-gray-600 font-mono">v3.1 Stable</div>
                 </header>
 
                 {/* Main Interface */}
@@ -200,7 +226,7 @@ export default function Home() {
                                         <Upload className="w-8 h-8 text-gray-400 group-hover:text-purple-400 transition-colors" />
                                     </div>
                                     <div className="space-y-1">
-                                        <p className="font-medium text-gray-300">点击上传照片</p>
+                                        <p className="font-medium text-gray-300">点击上传你的照片</p>
                                         <p className="text-xs text-gray-500">支持 JPG, PNG (最大 5MB)</p>
                                     </div>
                                 </div>
@@ -218,13 +244,13 @@ export default function Home() {
 
                         <button
                             onClick={handleGenerate}
-                            disabled={!selectedImage || isLoading}
+                            disabled={!selectedImage || !referenceImage || isLoading}
                             className="w-full py-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold tracking-wide shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
                         >
                             {isLoading ? (
                                 <>
                                     <Loader2 className="w-5 h-5 animate-spin" />
-                                    生成中...
+                                    正在为你与乐邦占士合影...
                                 </>
                             ) : (
                                 <>
@@ -243,7 +269,6 @@ export default function Home() {
 
                         {isLoading ? (
                             <div className="text-center space-y-6 p-8 w-full max-w-sm">
-                                {/* Progress Bar */}
                                 <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
                                     <div
                                         className="h-full bg-gradient-to-r from-yellow-400 to-purple-600 transition-all duration-300 ease-out"
@@ -262,12 +287,10 @@ export default function Home() {
                         ) : generatedImage ? (
                             <div className="relative w-full h-full group">
                                 <img src={generatedImage} alt="AI Generated" className="w-full h-full object-cover animate-fade-in" />
-                                {/* Actions */}
                                 <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex justify-center gap-4">
-
                                     <a
                                         href={generatedImage}
-                                        download="james-ai-photo.png"
+                                        download="lebron-ai-photo.png"
                                         target="_blank"
                                         rel="noreferrer"
                                         className="px-6 py-2 bg-white text-black rounded-full font-medium hover:bg-gray-200 transition-colors"
@@ -279,7 +302,7 @@ export default function Home() {
                         ) : (
                             <div className="text-center text-gray-600 px-6">
                                 <div className="w-20 h-20 border-2 border-dashed border-white/5 rounded-2xl mx-auto mb-4 flex items-center justify-center rotate-3">
-                                    <span className="text-4xl opacity-20">?</span>
+                                    <span className="text-4xl opacity-20">🏀</span>
                                 </div>
                                 <p>生成的合影将显示在这里</p>
                             </div>
@@ -289,7 +312,7 @@ export default function Home() {
 
                 </main>
 
-                {/* Debug Info (Visible only if URL is present) */}
+                {/* Debug Info */}
                 {debugUrl && (
                     <div className="mt-8 p-4 bg-gray-900 rounded-lg max-w-2xl w-full border border-gray-800 break-all">
                         <p className="text-xs text-gray-500 mb-1 flex items-center gap-2">
@@ -306,7 +329,6 @@ export default function Home() {
     );
 }
 
-// Icon Components to avoid extra deps if needed, but using lucide is fine
 function SparklesIcon({ className }: { className?: string }) {
     return (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>

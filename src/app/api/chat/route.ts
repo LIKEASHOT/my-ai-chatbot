@@ -5,13 +5,15 @@ export const runtime = 'edge';
 
 export async function POST(req: Request) {
   try {
-    const { image } = await req.json();
+    const { imageA, imageB } = await req.json();
 
-    if (!image) {
-      return NextResponse.json({ message: "Image is required" }, { status: 400 });
+    if (!imageA || !imageB) {
+      return NextResponse.json({ message: "Both images are required" }, { status: 400 });
     }
 
-    const prompt = "You are a realistic photo generator. Refer to the person in the attached image and create a new, extremely mundane iPhone selfie of them standing next to a tall basketball teammate in a matching purple and gold Lakers jersey. They are at the Lakers home arena after a game. The photo should look like a random, blurry, and slightly overexposed snapshot. It must look like a low-quality accidental shot with no professional composition. Ensure the person from the attached image is also wearing a Lakers jersey and looking at the camera. Both people are smiling. Crowds visible in the background.";
+    const prompt = `You are a high-end photo synthesis engine. Refer to the Person in Image A and the Athlete in Image B. Create a new, combined photo of them standing together.
+Style Requirement: The output must be a mundane, low-quality iPhone selfie. It should look like a random, blurry, and slightly overexposed snapshot taken at a basketball arena post-game. No professional lighting or composition.
+Details: Ensure the Person from Image A is wearing a team jersey and the Athlete from Image B is smiling. The final result should look like an accidental, unedited "mistake" shot taken while pulling the phone from a pocket.`;
 
     const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
     const apiKey = process.env.OPENAI_API_KEY;
@@ -23,7 +25,7 @@ export async function POST(req: Request) {
           // Keep-alive byte
           controller.enqueue(encoder.encode("  "));
 
-          // Call the proxy /chat/completions
+          // Call the proxy with TWO images
           const apiResponse = await fetch(`${baseURL}/chat/completions`, {
             method: 'POST',
             headers: {
@@ -37,7 +39,14 @@ export async function POST(req: Request) {
                   role: "user",
                   content: [
                     { type: "text", text: prompt },
-                    { type: "image_url", image_url: { url: image } }
+                    {
+                      type: "image_url",
+                      image_url: { url: imageA }  // User's selfie (Image A)
+                    },
+                    {
+                      type: "image_url",
+                      image_url: { url: imageB }  // Athlete reference (Image B)
+                    }
                   ]
                 }
               ],
@@ -46,26 +55,19 @@ export async function POST(req: Request) {
           });
 
           const rawBody = await apiResponse.text();
-
-          // Parse the ChatCompletion response
           const chatCompletion = JSON.parse(rawBody);
           const content = chatCompletion.choices?.[0]?.message?.content || "";
 
           console.log("Full content from model:", content);
 
-          // The content is typically a markdown code block: ```json\n{...}\n```
-          // We need to extract and parse the inner JSON
           let finalImageUrl = "";
 
-          // Strategy 1: Try to parse embedded JSON from markdown code block
+          // Strategy 1: Parse embedded JSON from markdown code block
           const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
           if (jsonBlockMatch) {
             try {
               const innerJson = JSON.parse(jsonBlockMatch[1].trim());
               console.log("Parsed inner JSON keys:", Object.keys(innerJson));
-
-              // Look for image URLs in the parsed JSON
-              // Check common fields that might have the image URL
               if (innerJson.urls && Array.isArray(innerJson.urls)) {
                 finalImageUrl = innerJson.urls[0];
               } else if (innerJson.url) {
@@ -82,25 +84,19 @@ export async function POST(req: Request) {
             }
           }
 
-          // Strategy 2: If no JSON block found or no URL in it,
-          // search for image file URLs directly in the content text
+          // Strategy 2: filesystem.site CDN URL
           if (!finalImageUrl) {
-            // Look for filesystem.site CDN URLs (the actual image host)
             const cdnMatch = content.match(/https?:\/\/pro\.filesystem\.site\/cdn\/[^\s"')]+/);
-            if (cdnMatch) {
-              finalImageUrl = cdnMatch[0];
-            }
+            if (cdnMatch) finalImageUrl = cdnMatch[0];
           }
 
-          // Strategy 3: Look for any .png/.jpg/.webp URL in content
+          // Strategy 3: Any image file URL
           if (!finalImageUrl) {
             const imgMatch = content.match(/https?:\/\/[^\s"')]+\.(?:png|jpg|jpeg|webp)/i);
-            if (imgMatch) {
-              finalImageUrl = imgMatch[0];
-            }
+            if (imgMatch) finalImageUrl = imgMatch[0];
           }
 
-          // Strategy 4: Last resort - grab any URL that's NOT asyncdata.net/web
+          // Strategy 4: Any URL that's NOT asyncdata.net/web
           if (!finalImageUrl) {
             const allUrls = content.match(/https?:\/\/[^\s"')]+/g) || [];
             console.log("All URLs found in content:", allUrls);
