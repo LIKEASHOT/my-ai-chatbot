@@ -33,7 +33,7 @@ Details: Ensure the Person from Image A is wearing a team jersey and the Athlete
               'Authorization': `Bearer ${apiKey}`,
             },
             body: JSON.stringify({
-              model: 'z-image-turbo',
+              model: 'gemini-2.5-flash-image-preview',
               messages: [
                 {
                   role: "user",
