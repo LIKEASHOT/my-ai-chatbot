@@ -19,6 +19,51 @@ const STEPS = [
     "快门即将按下...",
 ];
 
+// Image compression utility
+const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = document.createElement('img');
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                const maxDim = 1024;
+
+                // Resize logic
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round((height * maxDim) / width);
+                        width = maxDim;
+                    } else {
+                        width = Math.round((width * maxDim) / height);
+                        height = maxDim;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error("Failed to get canvas context"));
+                    return;
+                }
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Compress to JPEG with 0.7 quality
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                resolve(compressedBase64);
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+};
+
 export default function Home() {
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [generatedImage, setGeneratedImage] = useState<string | null>(null);
@@ -27,16 +72,19 @@ export default function Home() {
     const [stepText, setStepText] = useState(STEPS[0]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            setSelectedImage(e.target?.result as string);
+        try {
+            // Use the compression utility
+            const compressed = await compressImage(file);
+            setSelectedImage(compressed);
             setGeneratedImage(null); // Reset previous result
-        };
-        reader.readAsDataURL(file);
+        } catch (error) {
+            console.error("Image compression failed:", error);
+            alert("图片处理失败，请重试");
+        }
     };
 
     const simulateProgress = () => {
@@ -70,36 +118,17 @@ export default function Home() {
             const data = await response.json();
 
             // Try to find the image URL in common OpenAI response structures
-            // Sometimes it's in content, sometimes it's text.
-            // Assuming standard chat completion structure first:
             const content = data.choices?.[0]?.message?.content;
 
-            // If the model returns a direct URL in content text (common for some img models wrapped as chat)
-            // Or if it returns markdown image syntax
-            // We will naively look for a URL in the content if it's not JSON
-
             if (content) {
-                // Simple heuristic: check if content looks like a URL or contains one
-                // For now, let's assume the content itself MIGHT be the image URL or description
-                // But usually image generation models return a specific url field or attachment.
-                // Since user specified gpt-4o-image via chat completion, it's likely returning text DESCRIPTION or maybe a URL if it's a tool call.
-                // BUT, user's prompt is a description.
-                // Wait, if "gpt-4o-image" is actually an image generator, it might return a URL.
-
-                // Let's look for http links in the content
                 const urlMatch = content.match(/https?:\/\/[^\s)]+/);
                 if (urlMatch) {
                     setGeneratedImage(urlMatch[0]);
                 } else {
-                    // If no URL found, maybe the proxy returns the image directly or base64?
-                    // Or maybe it just described the image?
-                    // Fallback: Display the content as text if it's not a URL, might be an error or description
                     console.log("No URL found in content:", content);
-                    // For demo purposes if this fails we might need to adjust based on actual API behavior
                 }
             }
 
-            // If the proxy returns standard image generation response format (dall-e style)
             if (data.data && data.data[0]?.url) {
                 setGeneratedImage(data.data[0].url);
             }
