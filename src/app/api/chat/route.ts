@@ -62,6 +62,13 @@ Details: Ensure the Person from Image A is wearing a team jersey and the Athlete
 
           let finalImageUrl = "";
 
+          // Strategy 0: Inline base64 data URI (Gemini returns ![image](data:image/...;base64,...))
+          const dataUriMatch = content.match(/data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+/);
+          if (dataUriMatch) {
+            finalImageUrl = dataUriMatch[0];
+            console.log("Found inline base64 image, length:", finalImageUrl.length);
+          }
+
           // Strategy 1: Parse embedded JSON from markdown code block
           const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
           if (jsonBlockMatch) {
@@ -111,9 +118,11 @@ Details: Ensure the Person from Image A is wearing a team jersey and the Athlete
           console.log("Final resolved image URL:", finalImageUrl);
 
           // Download the image server-side and convert to base64
-          // This bypasses CDN hotlink protection (e.g. cdn.qwenlm.ai 403)
+          // Skip if already a data URI (Gemini inline base64)
           let imageData = "";
-          if (finalImageUrl) {
+          if (finalImageUrl && finalImageUrl.startsWith("data:")) {
+            imageData = finalImageUrl;
+          } else if (finalImageUrl) {
             try {
               console.log("Downloading image from:", finalImageUrl);
               const imgResponse = await fetch(finalImageUrl, {
