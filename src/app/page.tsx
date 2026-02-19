@@ -11,11 +11,7 @@ function cn(...inputs: ClassValue[]) {
 
 // Progress steps
 const STEPS = [
-    "正在分析面部特征...",
-    "正在联系乐邦占士...",
     "乐邦占士正在赶来...",
-    "正在寻找拍摄角度...",
-    "快门即将按下...",
 ];
 
 // Image compression utility
@@ -312,17 +308,7 @@ export default function Home() {
 
                 </main>
 
-                {/* Debug Info */}
-                {debugUrl && (
-                    <div className="mt-8 p-4 bg-gray-900 rounded-lg max-w-2xl w-full border border-gray-800 break-all">
-                        <p className="text-xs text-gray-500 mb-1 flex items-center gap-2">
-                            <AlertCircle className="w-3 h-3" /> Debug Info: Image URL
-                        </p>
-                        <div className="text-[10px] sm:text-xs text-purple-400 font-mono bg-black p-2 rounded select-all cursor-text">
-                            {debugUrl}
-                        </div>
-                    </div>
-                )}
+                {/* Debug Info Removed */}
 
             </div>
         </div>
