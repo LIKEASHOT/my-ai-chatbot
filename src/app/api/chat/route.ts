@@ -20,10 +20,10 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // 1. Keep-alive byte
+          // Keep-alive byte
           controller.enqueue(encoder.encode("  "));
 
-          // 2. Step 1: Call the proxy /chat/completions
+          // Call the proxy /chat/completions
           const apiResponse = await fetch(`${baseURL}/chat/completions`, {
             method: 'POST',
             headers: {
@@ -46,71 +46,82 @@ export async function POST(req: Request) {
           });
 
           const rawBody = await apiResponse.text();
-          console.log("Step 1 - Proxy raw response (first 500):", rawBody.substring(0, 500));
 
-          // 3. Parse step 1 response and look for ANY URL
-          let intermediateUrl = "";
+          // Parse the ChatCompletion response
+          const chatCompletion = JSON.parse(rawBody);
+          const content = chatCompletion.choices?.[0]?.message?.content || "";
+
+          console.log("Full content from model:", content);
+
+          // The content is typically a markdown code block: ```json\n{...}\n```
+          // We need to extract and parse the inner JSON
           let finalImageUrl = "";
 
-          try {
-            const step1Data = JSON.parse(rawBody);
-
-            // Maybe the proxy already returns urls directly?
-            if (step1Data.urls && Array.isArray(step1Data.urls) && step1Data.urls.length > 0) {
-              finalImageUrl = step1Data.urls[0];
-            }
-            // Check standard chat completion content for a URL
-            else {
-              const content = step1Data.choices?.[0]?.message?.content || "";
-              const urlMatch = content.match(/https?:\/\/[^\s)"]+/);
-              if (urlMatch) {
-                intermediateUrl = urlMatch[0];
-              }
-            }
-          } catch {
-            // If rawBody isn't JSON, try to find URL in raw text
-            const urlMatch = rawBody.match(/https?:\/\/[^\s)"]+/);
-            if (urlMatch) {
-              intermediateUrl = urlMatch[0];
-            }
-          }
-
-          // 4. Step 2: If we got an intermediate URL (asyncdata.net style), fetch it
-          if (!finalImageUrl && intermediateUrl) {
-            console.log("Step 2 - Fetching intermediate URL:", intermediateUrl);
-
-            const step2Response = await fetch(intermediateUrl, {
-              headers: { 'Accept': 'application/json' },
-            });
-            const step2Body = await step2Response.text();
-            console.log("Step 2 - Intermediate response (first 500):", step2Body.substring(0, 500));
-
+          // Strategy 1: Try to parse embedded JSON from markdown code block
+          const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+          if (jsonBlockMatch) {
             try {
-              const step2Data = JSON.parse(step2Body);
+              const innerJson = JSON.parse(jsonBlockMatch[1].trim());
+              console.log("Parsed inner JSON keys:", Object.keys(innerJson));
 
-              // Extract the actual image URL from the final JSON
-              if (step2Data.urls && Array.isArray(step2Data.urls) && step2Data.urls.length > 0) {
-                finalImageUrl = step2Data.urls[0];
+              // Look for image URLs in the parsed JSON
+              // Check common fields that might have the image URL
+              if (innerJson.urls && Array.isArray(innerJson.urls)) {
+                finalImageUrl = innerJson.urls[0];
+              } else if (innerJson.url) {
+                finalImageUrl = innerJson.url;
+              } else if (innerJson.image_url) {
+                finalImageUrl = innerJson.image_url;
+              } else if (innerJson.result_url) {
+                finalImageUrl = innerJson.result_url;
+              } else if (innerJson.output_url) {
+                finalImageUrl = innerJson.output_url;
               }
-              // Fallback: look in generations
-              else if (step2Data.generations?.[0]?.encodings?.source?.path) {
-                finalImageUrl = step2Data.generations[0].encodings.source.path;
-              }
-            } catch {
-              console.error("Step 2 - Failed to parse intermediate response");
+            } catch (e) {
+              console.log("Failed to parse inner JSON block:", e);
             }
           }
 
-          // 5. Return the final result
+          // Strategy 2: If no JSON block found or no URL in it,
+          // search for image file URLs directly in the content text
+          if (!finalImageUrl) {
+            // Look for filesystem.site CDN URLs (the actual image host)
+            const cdnMatch = content.match(/https?:\/\/pro\.filesystem\.site\/cdn\/[^\s"')]+/);
+            if (cdnMatch) {
+              finalImageUrl = cdnMatch[0];
+            }
+          }
+
+          // Strategy 3: Look for any .png/.jpg/.webp URL in content
+          if (!finalImageUrl) {
+            const imgMatch = content.match(/https?:\/\/[^\s"')]+\.(?:png|jpg|jpeg|webp)/i);
+            if (imgMatch) {
+              finalImageUrl = imgMatch[0];
+            }
+          }
+
+          // Strategy 4: Last resort - grab any URL that's NOT asyncdata.net/web
+          if (!finalImageUrl) {
+            const allUrls = content.match(/https?:\/\/[^\s"')]+/g) || [];
+            console.log("All URLs found in content:", allUrls);
+            for (const url of allUrls) {
+              if (!url.includes("asyncdata.net/web")) {
+                finalImageUrl = url;
+                break;
+              }
+            }
+          }
+
+          console.log("Final resolved image URL:", finalImageUrl);
+
           const result = JSON.stringify({
             imageUrl: finalImageUrl || null,
             debug: {
-              intermediateUrl,
-              finalImageUrl,
+              contentLength: content.length,
+              foundUrl: finalImageUrl,
             }
           });
 
-          console.log("Final result:", result);
           controller.enqueue(encoder.encode(result));
           controller.close();
 
