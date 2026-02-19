@@ -12,8 +12,8 @@ export async function POST(req: Request) {
     }
 
     const prompt = `You are a high-end photo synthesis engine. Refer to the Person in Image A and the Athlete in Image B. Create a new, combined photo of them standing together.
-Style Requirement: The output must be a mundane, low-quality iPhone selfie. It should look like a random, blurry, and slightly overexposed snapshot taken at a basketball arena post-game. No professional lighting or composition.
-Details: Ensure the Person from Image A is wearing a team jersey and the Athlete from Image B is smiling. The final result should look like an accidental, unedited "mistake" shot taken while pulling the phone from a pocket.`;
+Style Requirement: The output must look like a casual iPhone selfie taken at a basketball arena post-game. Natural lighting, candid moment, realistic skin tones and textures. The image should be clear and detailed.
+Details: Ensure the Person from Image A is wearing a team jersey and the Athlete from Image B is smiling. The final result should look like a real photo taken by a friend, with crowds visible in the background.`;
 
     const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
     const apiKey = process.env.OPENAI_API_KEY;

@@ -30,7 +30,7 @@ const compressImage = (file: File): Promise<string> => {
                 const canvas = document.createElement('canvas');
                 let width = img.width;
                 let height = img.height;
-                const maxDim = 1024;
+                const maxDim = 1536;
                 if (width > maxDim || height > maxDim) {
                     if (width > height) {
                         height = Math.round((height * maxDim) / width);
@@ -45,7 +45,7 @@ const compressImage = (file: File): Promise<string> => {
                 const ctx = canvas.getContext('2d');
                 if (!ctx) { reject(new Error("Canvas error")); return; }
                 ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', 0.7));
+                resolve(canvas.toDataURL('image/jpeg', 0.9));
             };
             img.onerror = (err) => reject(err);
         };
@@ -64,7 +64,7 @@ const loadReferenceImage = (): Promise<string> => {
             // Compress reference image too
             let width = img.width;
             let height = img.height;
-            const maxDim = 1024;
+            const maxDim = 1536;
             if (width > maxDim || height > maxDim) {
                 if (width > height) {
                     height = Math.round((height * maxDim) / width);
@@ -79,7 +79,7 @@ const loadReferenceImage = (): Promise<string> => {
             const ctx = canvas.getContext('2d');
             if (!ctx) { reject(new Error("Canvas error")); return; }
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            resolve(canvas.toDataURL('image/jpeg', 0.9));
         };
         img.onerror = (err) => reject(err);
     });
