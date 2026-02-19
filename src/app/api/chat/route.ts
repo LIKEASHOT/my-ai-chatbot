@@ -1,13 +1,4 @@
-import { OpenAI } from 'openai';
 import { NextResponse } from 'next/server';
-
-// Create an OpenAI API client
-const clientConfig = {
-  baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-  apiKey: process.env.OPENAI_API_KEY,
-};
-
-const openai = new OpenAI(clientConfig);
 
 // Set the runtime to edge for best performance
 export const runtime = 'edge';
@@ -21,40 +12,50 @@ export async function POST(req: Request) {
     }
 
     // Fixed prompt as requested
-    const prompt = "A grainy, accidental iPhone front-camera selfie taken at the Lakers home arena right after a game ended. The photo is blurry, poorly framed with no clear subject, and slightly overexposed due to harsh, uneven lighting. It captures a chaotic, mundane moment of crowds leaving, looking exactly like a mistake shot taken while pulling the phone from a pocket. Raw, low-quality, unedited aesthetic..";
+    const prompt = "A grainy, accidental iPhone front-camera selfie taken at the Lakers home arena right after a game ended. The photo is blurry, poorly framed with no clear subject, and slightly overexposed due to harsh, uneven lighting. It captures a chaotic, mundane moment of crowds leaving, looking exactly like a mistake shot taken while pulling the phone from a pocket. Raw, low-quality, unedited aesthetic.";
+
+    const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+    const apiKey = process.env.OPENAI_API_KEY;
 
     // Create a stream to bypass Vercel 25s initial response timeout
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // 1. Send a keep-alive byte (whitespace) immediately
-          // This tells Vercel "response started", resetting the 25s timeout
+          // 1. Send a keep-alive byte immediately
           controller.enqueue(encoder.encode("  "));
 
-          // 2. Call OpenAI API (this might take 30s+)
-          const response = await openai.chat.completions.create({
-            model: 'gpt-4o-image', // Specific model requested
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: prompt },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: image
+          // 2. Call the proxy API directly with fetch (bypass OpenAI SDK)
+          //    This gives us the RAW response JSON including `urls` array
+          const apiResponse = await fetch(`${baseURL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-image',
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: prompt },
+                    {
+                      type: "image_url",
+                      image_url: { url: image }
                     }
-                  }
-                ]
-              }
-            ],
-            stream: false, // We still wait for full response, but inside the stream wrapper
+                  ]
+                }
+              ],
+              stream: false,
+            }),
           });
 
-          // 3. Send the actual JSON response
-          const jsonString = JSON.stringify(response);
-          controller.enqueue(encoder.encode(jsonString));
+          // 3. Get the raw response body as text and forward it directly
+          const rawBody = await apiResponse.text();
+          console.log("Proxy raw response (first 500 chars):", rawBody.substring(0, 500));
+
+          controller.enqueue(encoder.encode(rawBody));
           controller.close();
 
         } catch (error: any) {
@@ -62,16 +63,13 @@ export async function POST(req: Request) {
           const errorJson = JSON.stringify({
             error: true,
             message: error.message || "Generate error",
-            details: error
           });
           controller.enqueue(encoder.encode(errorJson));
-          controller.close(); // Close stream on error
+          controller.close();
         }
       }
     });
 
-    // Return the stream with JSON content type
-    // Browsers' .json() parser handles leading whitespace fine
     return new Response(stream, {
       headers: {
         'Content-Type': 'application/json',
