@@ -182,7 +182,7 @@ export default function Home() {
             <div className="fixed inset-0 z-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-purple-900/20 via-black to-black pointer-events-none"></div>
             <div className="fixed inset-0 z-0 bg-[url('/noise.png')] opacity-[0.03] pointer-events-none"></div>
 
-            <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 flex flex-col items-center min-h-screen justify-center">
+            <div className="relative z-10 max-w-4xl mx-auto px-6 py-12 flex flex-col items-center min-h-screen">
 
                 {/* Header */}
                 <header className="text-center mb-12 space-y-4">
