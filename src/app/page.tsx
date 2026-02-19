@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Upload, ImageIcon, Loader2, RefreshCw } from 'lucide-react';
+import { Upload, ImageIcon, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 import clsx, { ClassValue } from 'clsx';
 import Image from 'next/image';
@@ -70,6 +70,7 @@ export default function Home() {
     const [isLoading, setIsLoading] = useState(false);
     const [progress, setProgress] = useState(0);
     const [stepText, setStepText] = useState(STEPS[0]);
+    const [debugUrl, setDebugUrl] = useState<string>("");
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -80,7 +81,8 @@ export default function Home() {
             // Use the compression utility
             const compressed = await compressImage(file);
             setSelectedImage(compressed);
-            setGeneratedImage(null); // Reset previous result
+            setGeneratedImage(null);
+            setDebugUrl("");
         } catch (error) {
             console.error("Image compression failed:", error);
             alert("图片处理失败，请重试");
@@ -104,6 +106,8 @@ export default function Home() {
         if (!selectedImage) return;
 
         setIsLoading(true);
+        setDebugUrl("");
+        setGeneratedImage(null);
         const progressInterval = simulateProgress();
 
         try {
@@ -113,44 +117,58 @@ export default function Home() {
                 body: JSON.stringify({ image: selectedImage }),
             });
 
-            if (!response.ok) throw new Error("Failed to generate");
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-            // Handle the potential keep-alive whitespace we added in the backend
             const rawText = await response.text();
             const cleanText = rawText.trim();
 
             let data: any;
             try {
                 data = JSON.parse(cleanText);
+                console.log("Parsed API Response:", data);
             } catch (e) {
                 console.error("JSON Parse Error:", e, cleanText);
                 throw new Error("Invalid JSON response");
             }
 
-            // 1. Check for 'urls' array (User's specific case for gpt-4o-image proxy)
+            let imageUrl = "";
+
+            // 1. Check for 'urls' array (Proxy convention, e.g. filesystem.site)
             if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
-                setGeneratedImage(data.urls[0]);
+                imageUrl = data.urls[0];
             }
-            // 2. Check for OpenAI Standard 'data' array
+            // 2. Check for 'generations' array (Another proxy convention, e.g. OpenAI videos)
+            else if (data.generations && Array.isArray(data.generations) && data.generations[0]?.url) {
+                imageUrl = data.generations[0].url;
+            }
+            // 3. Check for OpenAI Standard 'data' array
             else if (data.data && Array.isArray(data.data) && data.data[0]?.url) {
-                setGeneratedImage(data.data[0].url);
+                imageUrl = data.data[0].url;
             }
-            // 3. Fallback: Search in content text
+            // 4. Fallback: Search in content text
             else {
                 const content = data.choices?.[0]?.message?.content;
                 if (content) {
                     const urlMatch = content.match(/https?:\/\/[^\s)]+/);
                     if (urlMatch) {
-                        setGeneratedImage(urlMatch[0]);
+                        imageUrl = urlMatch[0];
                     } else {
                         console.log("No URL found in content:", content);
                     }
                 }
             }
 
-        } catch (error) {
+            if (imageUrl) {
+                setGeneratedImage(imageUrl);
+                setDebugUrl(imageUrl); // Show for debugging
+            } else {
+                console.error("No image URL found in standard paths. Data:", data);
+                alert("未能识别返回的图片格式，请查看控制台日志");
+            }
+
+        } catch (error: any) {
             console.error(error);
-            alert("生成失败，请重试");
+            alert(`生成失败: ${error.message}`);
         } finally {
             clearInterval(progressInterval);
             setProgress(100);
@@ -175,6 +193,7 @@ export default function Home() {
                     <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
                         上传你的自拍，AI 将带你穿越到湖人主场，捕捉那个混乱而真实的瞬间。
                     </p>
+                    <div className="text-xs text-gray-600 font-mono">v3.1 Stable</div>
                 </header>
 
                 {/* Main Interface */}
@@ -293,6 +312,19 @@ export default function Home() {
                     </div>
 
                 </main>
+
+                {/* Debug Info (Visible only if URL is present) */}
+                {debugUrl && (
+                    <div className="mt-8 p-4 bg-gray-900 rounded-lg max-w-2xl w-full border border-gray-800 break-all">
+                        <p className="text-xs text-gray-500 mb-1 flex items-center gap-2">
+                            <AlertCircle className="w-3 h-3" /> Debug Info: Image URL
+                        </p>
+                        <div className="text-[10px] sm:text-xs text-purple-400 font-mono bg-black p-2 rounded select-all cursor-text">
+                            {debugUrl}
+                        </div>
+                    </div>
+                )}
+
             </div>
         </div>
     );
