@@ -33,7 +33,7 @@ Details: Ensure the Person from Image A is wearing a team jersey and the Athlete
               'Authorization': `Bearer ${apiKey}`,
             },
             body: JSON.stringify({
-              model: 'gpt-4o-image',
+              model: 'qwen-image-2',
               messages: [
                 {
                   role: "user",
