@@ -162,10 +162,8 @@ export default function Home() {
             const imageUrl = data.imageUrl || "";
 
             if (imageUrl) {
-                // Proxy through our backend to bypass CDN hotlink protection
-                const proxiedUrl = `/api/proxy?url=${encodeURIComponent(imageUrl)}`;
-                setGeneratedImage(proxiedUrl);
-                setDebugUrl(imageUrl);
+                setGeneratedImage(imageUrl);
+                setDebugUrl(data.originalUrl || imageUrl);
             } else {
                 console.error("No image URL found. Data:", data);
                 alert("未能识别返回的图片格式，请查看控制台日志");

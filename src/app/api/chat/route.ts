@@ -110,8 +110,39 @@ Details: Ensure the Person from Image A is wearing a team jersey and the Athlete
 
           console.log("Final resolved image URL:", finalImageUrl);
 
+          // Download the image server-side and convert to base64
+          // This bypasses CDN hotlink protection (e.g. cdn.qwenlm.ai 403)
+          let imageData = "";
+          if (finalImageUrl) {
+            try {
+              console.log("Downloading image from:", finalImageUrl);
+              const imgResponse = await fetch(finalImageUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'image/*,*/*',
+                  'Referer': new URL(finalImageUrl).origin + '/',
+                },
+              });
+              if (imgResponse.ok) {
+                const contentType = imgResponse.headers.get('content-type') || 'image/png';
+                const buffer = await imgResponse.arrayBuffer();
+                const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+                imageData = `data:${contentType};base64,${base64}`;
+                console.log("Image downloaded, base64 length:", imageData.length);
+              } else {
+                console.error("Image download failed:", imgResponse.status, imgResponse.statusText);
+                // Fall back to raw URL
+                imageData = finalImageUrl;
+              }
+            } catch (e: any) {
+              console.error("Image download error:", e.message);
+              imageData = finalImageUrl;
+            }
+          }
+
           const result = JSON.stringify({
-            imageUrl: finalImageUrl || null,
+            imageUrl: imageData || null,
+            originalUrl: finalImageUrl,
             debug: {
               contentLength: content.length,
               foundUrl: finalImageUrl,
