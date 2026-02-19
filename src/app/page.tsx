@@ -131,32 +131,8 @@ export default function Home() {
                 throw new Error("Invalid JSON response");
             }
 
-            let imageUrl = "";
-
-            // 1. Check for 'urls' array (Proxy convention, e.g. filesystem.site)
-            if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
-                imageUrl = data.urls[0];
-            }
-            // 2. Check for 'generations' array (Another proxy convention, e.g. OpenAI videos)
-            else if (data.generations && Array.isArray(data.generations) && data.generations[0]?.url) {
-                imageUrl = data.generations[0].url;
-            }
-            // 3. Check for OpenAI Standard 'data' array
-            else if (data.data && Array.isArray(data.data) && data.data[0]?.url) {
-                imageUrl = data.data[0].url;
-            }
-            // 4. Fallback: Search in content text
-            else {
-                const content = data.choices?.[0]?.message?.content;
-                if (content) {
-                    const urlMatch = content.match(/https?:\/\/[^\s)]+/);
-                    if (urlMatch) {
-                        imageUrl = urlMatch[0];
-                    } else {
-                        console.log("No URL found in content:", content);
-                    }
-                }
-            }
+            // Backend now returns { imageUrl, debug }
+            const imageUrl = data.imageUrl || "";
 
             if (imageUrl) {
                 setGeneratedImage(imageUrl);
