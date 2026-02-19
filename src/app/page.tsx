@@ -195,7 +195,7 @@ export default function Home() {
                 </header>
 
                 {/* Main Interface */}
-                <main className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                <main className="w-full flex flex-col md:grid md:grid-cols-2 gap-8 items-start pb-20">
 
                     {/* Upload Section */}
                     <div className="space-y-6">
